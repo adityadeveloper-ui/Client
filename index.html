@@ -186,26 +186,65 @@ var LOADERR="";
 function cacheGet(slug){try{return JSON.parse(localStorage.getItem("sc-"+slug)||"null")}catch(e){return null}}
 function cachePut(slug,c,sc){try{localStorage.setItem("sc-"+slug,JSON.stringify({c:c,s:sc}))}catch(e){}}
 function pullSite(slug,cb){
-  setStatus("Loading…");
+  var finished=false;
+  function done(ok){if(finished)return;finished=true;if(cb)cb(ok)}
   function useCache(why){
-    var k=cacheGet(slug);LOADERR=why;
-    if(k&&k.c&&k.s){k.c.links=arr(k.c.links);db.clients=[k.c];db.scripts=[k.s];cb(true)}
-    else cb(false)
+    var k=cacheGet(slug);LOADERR=why||LOADERR;
+    if(k&&k.c&&k.s){k.c.links=arr(k.c.links);db.clients=[k.c];db.scripts=[k.s];done(true)}
+    else done(false)
   }
-  tfetch(BASE+"/clients.json",10000).then(function(o){
-    setStatus("Loading page…");
-    var cl=arr(o).map(function(c){c.links=arr(c.links);return c});
-    var c=cl.filter(function(x){return x.links.indexOf(slug)>-1})[0];
-    db.clients=cl;
-    if(!c){db.scripts=[];return cb(true)}
+  function getClientScript(c){
+    if(!c)return Promise.resolve(false);
+    c.links=arr(c.links);
+    db.clients=[c];
     var m=(c.meta&&c.meta[slug])||{};
     var id=(m.t&&m.t!=="direct")?m.t:c.scriptId;
-    if(!id){db.scripts=[];return cb(true)}
-    return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",10000).then(function(sc){
-      if(sc&&typeof sc==="object"&&sc.html){if(!sc.id)sc.id=id;db.scripts=[sc];cachePut(slug,c,sc);cb(true)}
-      else{setStatus("Loading all scripts…");pull(function(ok){if(ok){var cc=clientBySlug(slug),ss=cc&&scriptById((m.t&&m.t!=="direct")?m.t:cc.scriptId);if(cc&&ss)cachePut(slug,cc,ss);cb(true)}else useCache(LOADERR||"scripts failed")})}
-    },function(e){setStatus("Loading all scripts…");pull(function(ok){if(ok)cb(true);else useCache(LOADERR||String(e&&e.message||e))})})
-  }).catch(function(e){useCache(String(e&&e.message||e))})
+    if(!id){db.scripts=[];return Promise.resolve(true)}
+    return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",6500).then(function(sc){
+      if(!sc||typeof sc!=="object"||!sc.html)throw new Error("script missing");
+      if(!sc.id)sc.id=id;
+      db.scripts=[sc];cachePut(slug,c,sc);return true;
+    });
+  }
+  /* Fast first-visit path: ask Firebase only for clients whose links[i] equals this slug.
+     This avoids downloading the whole clients collection on every public page open. */
+  function findClientFast(){
+    var jobs=[];
+    for(var i=0;i<10;i++){
+      var order=encodeURIComponent('"links/'+i+'"');
+      var value=encodeURIComponent(JSON.stringify(slug));
+      var url=BASE+"/clients.json?orderBy="+order+"&equalTo="+value;
+      jobs.push(tfetch(url,2500).then(function(o){
+        return arr(o).map(function(c){if(c)c.links=arr(c.links);return c}).filter(Boolean);
+      }).catch(function(){return []}));
+    }
+    return Promise.all(jobs).then(function(groups){
+      for(var a=0;a<groups.length;a++)for(var b=0;b<groups[a].length;b++){
+        var c=groups[a][b];if(c.links.indexOf(slug)>-1)return c;
+      }
+      return null;
+    });
+  }
+  function legacyLookup(){
+    return tfetch(BASE+"/clients.json",8000).then(function(o){
+      var cl=arr(o).map(function(c){c.links=arr(c.links);return c});
+      var c=cl.filter(function(x){return x.links.indexOf(slug)>-1})[0];
+      db.clients=cl;
+      if(!c){db.scripts=[];return true}
+      return getClientScript(c).catch(function(){
+        /* Compatibility fallback for older database layouts, used only if direct script lookup fails. */
+        return new Promise(function(resolve){pull(function(ok){
+          if(ok){var cc=clientBySlug(slug),mm=(cc&&cc.meta&&cc.meta[slug])||{},sid=(mm.t&&mm.t!=="direct")?mm.t:(cc&&cc.scriptId),ss=cc&&scriptById(sid);if(cc&&ss)cachePut(slug,cc,ss)}
+          resolve(ok);
+        })});
+      });
+    });
+  }
+  findClientFast().then(function(c){
+    if(!c)return legacyLookup();
+    return getClientScript(c).catch(function(){return legacyLookup()});
+  }).then(function(ok){if(ok)done(true);else useCache(LOADERR||"page loading failed")})
+    .catch(function(e){legacyLookup().then(function(ok){if(ok)done(true);else useCache(String(e&&e.message||e))}).catch(function(x){useCache(String(x&&x.message||e&&e.message||e))})});
 }
 var touched=null;
 function save(cb){
