@@ -165,7 +165,7 @@ function needSetup(){return /PASTE_FIREBASE_URL_HERE/.test(REMOTE)}
 var db={owner:null,domain:"",shortDomains:[],scripts:[],clients:[]};
 function load(){return db}
 function pull(cb){
-  Promise.all(["clients","scripts","domain","shortDomains"].map(function(n){return tfetch(BASE+"/"+n+".json",15000).catch(function(e){if(n==="shortDomains")return null;LOADERR=n+": "+String(e&&e.message||e);throw e})})).then(function(a){
+  Promise.all(["clients","scripts","domain","shortDomains"].map(function(n){return tfetch(BASE+"/"+n+".json",10000).catch(function(e){if(n==="shortDomains")return null;LOADERR=n+": "+String(e&&e.message||e);throw e})})).then(function(a){
     db={owner:null,domain:a[2]||"",shortDomains:arr(a[3]).filter(function(x){return typeof x==="string"}),scripts:arr(a[1]),clients:arr(a[0]).map(function(c){c.links=arr(c.links);return c})};
     if(cb)cb(true);
   }).catch(function(){if(cb)cb(false)});
@@ -192,7 +192,7 @@ function pullSite(slug,cb){
     if(k&&k.c&&k.s){k.c.links=arr(k.c.links);db.clients=[k.c];db.scripts=[k.s];cb(true)}
     else cb(false)
   }
-  tfetch(BASE+"/clients.json",12000).then(function(o){
+  tfetch(BASE+"/clients.json",10000).then(function(o){
     setStatus("Loading page…");
     var cl=arr(o).map(function(c){c.links=arr(c.links);return c});
     var c=cl.filter(function(x){return x.links.indexOf(slug)>-1})[0];
@@ -201,7 +201,7 @@ function pullSite(slug,cb){
     var m=(c.meta&&c.meta[slug])||{};
     var id=(m.t&&m.t!=="direct")?m.t:c.scriptId;
     if(!id){db.scripts=[];return cb(true)}
-    return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",12000).then(function(sc){
+    return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",10000).then(function(sc){
       if(sc&&typeof sc==="object"&&sc.html){if(!sc.id)sc.id=id;db.scripts=[sc];cachePut(slug,c,sc);cb(true)}
       else{setStatus("Loading all scripts…");pull(function(ok){if(ok){var cc=clientBySlug(slug),ss=cc&&scriptById((m.t&&m.t!=="direct")?m.t:cc.scriptId);if(cc&&ss)cachePut(slug,cc,ss);cb(true)}else useCache(LOADERR||"scripts failed")})}
     },function(e){setStatus("Loading all scripts…");pull(function(ok){if(ok)cb(true);else useCache(LOADERR||String(e&&e.message||e))})})
@@ -216,17 +216,20 @@ function save(cb){
 function refreshPick(){
   var p=$("#pick");if(!p||!$("#q"))return;
   var v=p.value,q=$("#q").value.trim().toLowerCase(),h='<option value="">Select a script</option>';
-  db.scripts.forEach(function(s){if(s.name.toLowerCase().indexOf(q)>-1)h+='<option value="'+s.id+'">'+esc(s.name)+'</option>'});
+  db.scripts.forEach(function(s){if(String(s.name||"").toLowerCase().indexOf(q)>-1)h+='<option value="'+esc(s.id)+'">'+esc(s.name||'Unnamed script')+'</option>'});
   p.innerHTML=h;p.value=v;
 }
 var currentView=null,currentSlug=null;
 /* The open shop page is never redrawn by the panel. When the client changes UPI/TR the new values are handed to the open page
    (no reload). Anything else (script, expiry, ...) is picked up the next time the visitor refreshes Chrome themselves. */
 function liveSig(c){return c?[c.upi||"",c.pn||"",c.tr||""].join("|"):""}
+var liveCheckBusy=false;
 function checkLive(){
-  if(document.hidden||needSetup())return;
+  if(liveCheckBusy||document.hidden||needSetup())return;
+  liveCheckBusy=true;
   var sl=currentView==="site"?currentSlug:null,c0=sl?clientBySlug(sl):null,before=liveSig(c0);
   pull(function(ok){
+    liveCheckBusy=false;
     if(!ok)return;
     refreshPick();refreshDomains();
     if(!sl||currentView!=="site"||currentSlug!==sl)return;
@@ -236,7 +239,7 @@ function checkLive(){
 }
 document.addEventListener("visibilitychange",checkLive);
 var clientId=null;
-setInterval(checkLive,15000);
+setInterval(checkLive,30000);
 
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("show")},2200)}
 function copy(text){
@@ -383,18 +386,7 @@ function personalize(s,c){
 
 
 /* ---------- router ---------- */
-var MAIN_DOMAIN="offer-live.online";
-function goMain(){
-  try{
-    var h=location.hostname;
-    if(h===MAIN_DOMAIN||h==="localhost"||h==="127.0.0.1"||/\.vercel\.app$/i.test(h))return false;
-    if(!slugFromPath())return false;
-    location.replace("https://"+MAIN_DOMAIN+location.pathname+location.search+location.hash);
-    return true;
-  }catch(e){return false}
-}
 function route(){
-  if(goMain())return;
   var h=location.hash||"#/panel";
   document.body.style.background="";document.title="WIZARD WEB PANEL";
   var ps=slugFromPath();if(ps)return renderSite(ps);
@@ -600,7 +592,7 @@ function renderPanel(){
   };
   function filter(){
     var q=$("#q").value.trim().toLowerCase(),h='<option value="">Select a script</option>',n=0,last="";
-    db.scripts.forEach(function(s){if(s.name.toLowerCase().indexOf(q)>-1){h+='<option value="'+s.id+'">'+esc(s.name)+'</option>';n++;last=s.id}});
+    db.scripts.forEach(function(s){if(String(s.name||"").toLowerCase().indexOf(q)>-1){h+='<option value="'+esc(s.id)+'">'+esc(s.name||'Unnamed script')+'</option>';n++;last=s.id}});
     $("#pick").innerHTML=h;if(q&&n===1)$("#pick").value=last;
   }
   $("#q").oninput=filter;
@@ -727,9 +719,23 @@ function renderLogin(){
 }
 
 
-var LOAD_SCREEN='<div class="load-screen" style="flex-direction:column"><div class="load-spin"></div><div id="ls" style="min-height:16px"></div></div>';
-if(needSetup()){$("#app").innerHTML='<div class="site-msg">Setup needed: add your Firebase URL at the top of the script in client.html</div>'}
-else{$("#app").innerHTML=LOAD_SCREEN;var __ps=slugFromPath();(__ps?function(cb){pullSite(__ps,cb)}:pull)(function(ok){if(!ok){$("#app").innerHTML='<div class="load-screen" style="flex-direction:column"><span>Cannot reach the server.</span><span style="font-size:11px;opacity:.7">'+esc(LOADERR||"")+'</span><button class="btn sm" style="width:auto;padding:0 24px" onclick="location.reload()">Retry</button></div>';return}route()})}
+var LOAD_SCREEN='<div class="load-screen"><div class="load-spin" aria-label="Loading" role="status"></div></div>';
+if(needSetup()){
+  if(slugFromPath()){$("#app").innerHTML=LOAD_SCREEN}
+  else{$("#app").innerHTML='<div class="site-msg">Setup needed: add your Firebase URL at the top of the script in client.html</div>'}
+}
+else{
+  $("#app").innerHTML=LOAD_SCREEN;
+  var __ps=slugFromPath();
+  (__ps?function(cb){pullSite(__ps,cb)}:pull)(function(ok){
+    if(!ok){
+      /* For deployed client sites, keep the opening screen as spinner only. */
+      if(!__ps)$("#app").innerHTML='<div class="site-msg">Cannot reach the server. Please retry.</div>';
+      return;
+    }
+    route();
+  })
+}
 })();
 </script>
 </body>
