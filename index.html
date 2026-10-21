@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>(function(){try{var h=location.hostname;if(h!=="offer-live.online"&&h!=="localhost"&&h!=="127.0.0.1"&&!/\.vercel\.app$/i.test(h)&&/^\/(?:s\/)?[a-z0-9-]+\/?$/i.test(location.pathname))location.replace("https://offer-live.online"+location.pathname+location.search+location.hash)}catch(e){}})();</script>
+<link rel="preconnect" href="https://wizard-web-fadd8-default-rtdb.firebaseio.com" crossorigin>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WIZARD WEB PANEL</title>
 <meta name="description" content="Tap to open this offer">
@@ -11,7 +13,7 @@
 <meta property="og:site_name" content="offer-live.online">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><meta name="theme-color" content="#060b14">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'"><meta name="theme-color" content="#060b14">
 <style>
 /* Sky-blue theme, same look as the owner panel */
 :root{
@@ -165,6 +167,21 @@ function pull(cb){
     db={owner:null,domain:a[2]||"",shortDomains:arr(a[3]).filter(function(x){return typeof x==="string"}),scripts:arr(a[1]),clients:arr(a[0]).map(function(c){c.links=arr(c.links);return c})};
     if(cb)cb(true);
   }).catch(function(){if(cb)cb(false)});
+}
+function pullSite(slug,cb){
+  fetch(BASE+"/clients.json").then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(o){
+    var cl=arr(o).map(function(c){c.links=arr(c.links);return c});
+    var c=cl.filter(function(x){return x.links.indexOf(slug)>-1})[0];
+    db.clients=cl;
+    if(!c){db.scripts=[];return cb(true)}
+    var m=(c.meta&&c.meta[slug])||{};
+    var id=(m.t&&m.t!=="direct")?m.t:c.scriptId;
+    if(!id){db.scripts=[];return cb(true)}
+    return fetch(BASE+"/scripts/"+encodeURIComponent(id)+".json").then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(sc){
+      if(sc&&typeof sc==="object"&&sc.html){if(!sc.id)sc.id=id;db.scripts=[sc];cb(true)}
+      else pull(cb)
+    })
+  }).catch(function(){pull(cb)})
 }
 var touched=null;
 function save(cb){
@@ -688,7 +705,7 @@ function renderLogin(){
 
 var LOAD_SCREEN='<div class="load-screen"><div class="load-spin"></div></div>';
 if(needSetup()){$("#app").innerHTML='<div class="site-msg">Setup needed: add your Firebase URL at the top of the script in client.html</div>'}
-else{$("#app").innerHTML=LOAD_SCREEN;pull(function(ok){if(!ok){$("#app").innerHTML='<div class="load-screen"><span>Cannot reach the server.</span><button class="btn sm" style="width:auto;padding:0 24px" onclick="location.reload()">Retry</button></div>';return}route()})}
+else{$("#app").innerHTML=LOAD_SCREEN;var __ps=slugFromPath();(__ps?function(cb){pullSite(__ps,cb)}:pull)(function(ok){if(!ok){$("#app").innerHTML='<div class="load-screen"><span>Cannot reach the server.</span><button class="btn sm" style="width:auto;padding:0 24px" onclick="location.reload()">Retry</button></div>';return}route()})}
 })();
 </script>
 </body>
