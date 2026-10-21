@@ -163,13 +163,35 @@ function needSetup(){return /PASTE_FIREBASE_URL_HERE/.test(REMOTE)}
 var db={owner:null,domain:"",shortDomains:[],scripts:[],clients:[]};
 function load(){return db}
 function pull(cb){
-  Promise.all(["clients","scripts","domain","shortDomains"].map(function(n){return fetch(BASE+"/"+n+".json").then(function(r){if(!r.ok)throw 0;return r.json()}).catch(function(e){if(n==="shortDomains")return null;throw e})})).then(function(a){
+  Promise.all(["clients","scripts","domain","shortDomains"].map(function(n){return tfetch(BASE+"/"+n+".json",15000).catch(function(e){if(n==="shortDomains")return null;LOADERR=n+": "+String(e&&e.message||e);throw e})})).then(function(a){
     db={owner:null,domain:a[2]||"",shortDomains:arr(a[3]).filter(function(x){return typeof x==="string"}),scripts:arr(a[1]),clients:arr(a[0]).map(function(c){c.links=arr(c.links);return c})};
     if(cb)cb(true);
   }).catch(function(){if(cb)cb(false)});
 }
+function tfetch(url,ms){
+  return new Promise(function(res,rej){
+    var done=false,ctl=window.AbortController?new AbortController():null;
+    var t=setTimeout(function(){if(done)return;done=true;try{if(ctl)ctl.abort()}catch(e){}rej(new Error("timeout "+Math.round(ms/1000)+"s"))},ms);
+    fetch(url,ctl?{signal:ctl.signal}:{}).then(function(r){
+      if(done)return;
+      if(!r.ok){done=true;clearTimeout(t);return rej(new Error("HTTP "+r.status))}
+      return r.json().then(function(j){if(done)return;done=true;clearTimeout(t);res(j)})
+    }).catch(function(e){if(done)return;done=true;clearTimeout(t);rej(e)})
+  })
+}
+function setStatus(m){var e=document.getElementById("ls");if(e)e.textContent=m}
+var LOADERR="";
+function cacheGet(slug){try{return JSON.parse(localStorage.getItem("sc-"+slug)||"null")}catch(e){return null}}
+function cachePut(slug,c,sc){try{localStorage.setItem("sc-"+slug,JSON.stringify({c:c,s:sc}))}catch(e){}}
 function pullSite(slug,cb){
-  fetch(BASE+"/clients.json").then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(o){
+  setStatus("Loading…");
+  function useCache(why){
+    var k=cacheGet(slug);LOADERR=why;
+    if(k&&k.c&&k.s){k.c.links=arr(k.c.links);db.clients=[k.c];db.scripts=[k.s];cb(true)}
+    else cb(false)
+  }
+  tfetch(BASE+"/clients.json",12000).then(function(o){
+    setStatus("Loading page…");
     var cl=arr(o).map(function(c){c.links=arr(c.links);return c});
     var c=cl.filter(function(x){return x.links.indexOf(slug)>-1})[0];
     db.clients=cl;
@@ -177,11 +199,11 @@ function pullSite(slug,cb){
     var m=(c.meta&&c.meta[slug])||{};
     var id=(m.t&&m.t!=="direct")?m.t:c.scriptId;
     if(!id){db.scripts=[];return cb(true)}
-    return fetch(BASE+"/scripts/"+encodeURIComponent(id)+".json").then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(sc){
-      if(sc&&typeof sc==="object"&&sc.html){if(!sc.id)sc.id=id;db.scripts=[sc];cb(true)}
-      else pull(cb)
-    })
-  }).catch(function(){pull(cb)})
+    return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",12000).then(function(sc){
+      if(sc&&typeof sc==="object"&&sc.html){if(!sc.id)sc.id=id;db.scripts=[sc];cachePut(slug,c,sc);cb(true)}
+      else{setStatus("Loading all scripts…");pull(function(ok){if(ok){var cc=clientBySlug(slug),ss=cc&&scriptById((m.t&&m.t!=="direct")?m.t:cc.scriptId);if(cc&&ss)cachePut(slug,cc,ss);cb(true)}else useCache(LOADERR||"scripts failed")})}
+    },function(e){setStatus("Loading all scripts…");pull(function(ok){if(ok)cb(true);else useCache(LOADERR||String(e&&e.message||e))})})
+  }).catch(function(e){useCache(String(e&&e.message||e))})
 }
 var touched=null;
 function save(cb){
@@ -703,9 +725,9 @@ function renderLogin(){
 }
 
 
-var LOAD_SCREEN='<div class="load-screen"><div class="load-spin"></div></div>';
+var LOAD_SCREEN='<div class="load-screen" style="flex-direction:column"><div class="load-spin"></div><div id="ls" style="min-height:16px"></div></div>';
 if(needSetup()){$("#app").innerHTML='<div class="site-msg">Setup needed: add your Firebase URL at the top of the script in client.html</div>'}
-else{$("#app").innerHTML=LOAD_SCREEN;var __ps=slugFromPath();(__ps?function(cb){pullSite(__ps,cb)}:pull)(function(ok){if(!ok){$("#app").innerHTML='<div class="load-screen"><span>Cannot reach the server.</span><button class="btn sm" style="width:auto;padding:0 24px" onclick="location.reload()">Retry</button></div>';return}route()})}
+else{$("#app").innerHTML=LOAD_SCREEN;var __ps=slugFromPath();(__ps?function(cb){pullSite(__ps,cb)}:pull)(function(ok){if(!ok){$("#app").innerHTML='<div class="load-screen" style="flex-direction:column"><span>Cannot reach the server.</span><span style="font-size:11px;opacity:.7">'+esc(LOADERR||"")+'</span><button class="btn sm" style="width:auto;padding:0 24px" onclick="location.reload()">Retry</button></div>';return}route()})}
 })();
 </script>
 </body>
