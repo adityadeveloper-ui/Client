@@ -174,7 +174,11 @@ function pull(cb){
     if(cb)cb(true);
   }).catch(function(){if(cb)cb(false)});
 }
-function tfetch(url,ms){
+var T0=(window.performance&&performance.timeOrigin)||Date.now(),TDBG=/[?&]t=1(&|$)/.test(location.search),TLOG=[];
+function tlog(l){if(!TDBG)return;TLOG.push("+"+Math.round(Date.now()-T0)+"ms  "+l);var e=document.getElementById("tdbg");if(!e){e=document.createElement("pre");e.id="tdbg";e.style.cssText="position:fixed;left:0;right:0;bottom:0;max-height:55%;overflow:auto;margin:0;padding:6px 8px;background:rgba(0,0,0,.85);color:#7CFC9A;font:11px/1.35 monospace;z-index:2147483647;white-space:pre-wrap;pointer-events:none";document.documentElement.appendChild(e)}e.textContent=TLOG.join("\n")}
+function tfetch(url,ms){var t=Date.now(),sh=String(url).replace(BASE,"firebase").slice(0,64);
+  return _tfetch(url,ms).then(function(r){tlog("took "+(Date.now()-t)+"ms  OK    "+sh);return r},function(e){tlog("took "+(Date.now()-t)+"ms  FAIL  "+sh+" ("+(e&&e.message)+")");throw e})}
+function _tfetch(url,ms){
   return new Promise(function(res,rej){
     var done=false,ctl=window.AbortController?new AbortController():null;
     var t=setTimeout(function(){if(done)return;done=true;try{if(ctl)ctl.abort()}catch(e){}rej(new Error("timeout "+Math.round(ms/1000)+"s"))},ms);
@@ -188,7 +192,14 @@ function tfetch(url,ms){
 function setStatus(m){var e=document.getElementById("ls");if(e)e.textContent=m}
 var LOADERR="";
 function cacheGet(slug){try{return JSON.parse(localStorage.getItem("sc-"+slug)||"null")}catch(e){return null}}
-function cachePut(slug,c,sc){try{localStorage.setItem("sc-"+slug,JSON.stringify({c:c,s:sc}))}catch(e){}}
+function cachePut(slug,c,sc){
+  var key="sc-"+slug,keep="shopsnap2-"+slug,v;try{v=JSON.stringify({c:c,s:sc,t:Date.now()})}catch(e){return}
+  try{localStorage.setItem(key,v);return}catch(e){}
+  /* storage is full (every tested link keeps its own copy): free the other links' copies, then save this one */
+  tlog("storage full - clearing old saved copies");
+  try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k!==key&&k!==keep&&(k.indexOf("sc-")===0||k.indexOf("shopsnap2-")===0))localStorage.removeItem(k)}}catch(e){}
+  try{localStorage.setItem(key,v)}catch(e){tlog("could not save copy on this device")}
+}
 var apiOff=false,preS={},idxSid=null;
 /* big shop script: edge-cached copy from /api/script first (fast, compressed), Firebase as the fallback */
 function fetchScript(id){
@@ -615,6 +626,8 @@ function renderSite(slug){
     app.innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:#fff;border:none"></iframe>';
     _sf=$("#siteFrame");
   }
+  tlog("showing shop (page html "+Math.round(html.length/1024)+"KB)");
+  if(TDBG&&!_sf.__tl){_sf.__tl=1;_sf.addEventListener("load",function(){tlog("shop frame finished loading")})}
   _sf.srcdoc=html;
 }
 
@@ -814,6 +827,8 @@ else{
   var __ps=slugFromPath();
   if(__ps){
     var __k=cacheGet(__ps);
+    if(TDBG){var __n=0,__b=0;try{for(var __i=0;__i<localStorage.length;__i++){var __kk=localStorage.key(__i);__n++;__b+=(__kk||"").length+(localStorage.getItem(__kk)||"").length}}catch(e){}
+      tlog("saved copy: "+(__k&&__k.c&&__k.s?"FOUND (instant path)":"NOT FOUND (full download path)")+" | storage: "+__n+" items, ~"+Math.round(__b/1024)+"K chars")}
     function __sig(c,sc){try{return [c.upi,c.pn,c.tr,c.active,c.expiresAt>Date.now(),sc&&sc.id,hashStr((sc&&sc.html)||""),JSON.stringify((c.meta&&c.meta[__ps])||{})].join("|")}catch(e){return ""}}
     if(__k&&__k.c&&__k.s){
       /* repeat visit on this device: paint the saved page at once (renderSite builds the real iframe straight away), then check for changes quietly */
