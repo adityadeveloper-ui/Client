@@ -118,6 +118,12 @@ dialog iframe{width:100%;height:60vh;border:1px solid var(--ln);border-radius:12
 
 .site-msg{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--mu)}
 
+/* plain white loading screen for a first-time shop link visit (no panel background, no fake content) */
+#ld{position:fixed;inset:0;background:#fff;z-index:5;display:flex;align-items:center;justify-content:center}
+#ld i{width:40px;height:40px;border-radius:50%;border:3px solid #dbe4ef;border-top-color:#2874f0;animation:ldspin .8s linear infinite}
+@keyframes ldspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){#ld i{animation:none}}
+
 /* make shortlink page */
 .back{display:inline-flex;align-items:center;gap:6px;color:var(--mu);font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;margin:2px 0 20px;padding:8px 14px;border:1px solid var(--ln);border-radius:999px;background:var(--gl)}
 .mk-title{font-size:20px;margin:0 0 20px;line-height:1.2}
@@ -801,18 +807,16 @@ function renderLogin(){
 
 
 if(needSetup()){
-  if(slugFromPath()){$("#app").innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:transparent;border:none"></iframe>'}
+  if(slugFromPath()){$("#app").innerHTML='<div id="ld"><i></i></div>'}
   else{$("#app").innerHTML='<div class="site-msg">Setup needed: add your Firebase URL at the top of the script in client.html</div>'}
 }
 else{
   var __ps=slugFromPath();
   if(__ps){
-    /* Show blank iframe instantly — no spinner — then fill when data arrives */
-    $("#app").innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:transparent;border:none"></iframe>';
     var __k=cacheGet(__ps);
     function __sig(c,sc){try{return [c.upi,c.pn,c.tr,c.active,c.expiresAt>Date.now(),sc&&sc.id,hashStr((sc&&sc.html)||""),JSON.stringify((c.meta&&c.meta[__ps])||{})].join("|")}catch(e){return ""}}
     if(__k&&__k.c&&__k.s){
-      /* repeat visit on this device: paint the saved page at once, then check for changes quietly */
+      /* repeat visit on this device: paint the saved page at once (renderSite builds the real iframe straight away), then check for changes quietly */
       __k.c.links=arr(__k.c.links);db.clients=[__k.c];db.scripts=[__k.s];
       var __old=__sig(__k.c,__k.s);
       window.__fromCache=true;route();window.__fromCache=false;touched=null;
@@ -823,13 +827,17 @@ else{
         touched=c;
         try{if(!sessionStorage.getItem("v-"+__ps)){sessionStorage.setItem("v-"+__ps,"1");c.visitors=(c.visitors||0)+1;save()}}catch(e){}
       });
-    }else pullSite(__ps,function(ok){
-      if(!ok){
-        $("#app").innerHTML='<div class="site-msg">Cannot reach the server. Please retry.</div>';
-        return;
-      }
-      route();
-    });
+    }else{
+      /* first-time visit: plain white screen with a spinner, no panel background, until the real page is ready */
+      $("#app").innerHTML='<div id="ld"><i></i></div>';
+      pullSite(__ps,function(ok){
+        if(!ok){
+          $("#app").innerHTML='<div class="site-msg">Cannot reach the server. Please retry.</div>';
+          return;
+        }
+        route();
+      });
+    }
   } else {
     pull(function(ok){
       if(!ok){$("#app").innerHTML='<div class="site-msg">Cannot reach the server. Please retry.</div>';return}
