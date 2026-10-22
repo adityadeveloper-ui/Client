@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script>try{if(/^\/(?:s\/)?[a-z0-9-]+\/?$/i.test(location.pathname))document.documentElement.className+=" sp"}catch(e){}</script>
+<head>
 <meta charset="utf-8">
 
 <link rel="preconnect" href="https://wizard-web-fadd8-default-rtdb.firebaseio.com" crossorigin>
@@ -115,8 +115,6 @@ dialog iframe{width:100%;height:60vh;border:1px solid var(--ln);border-radius:12
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,30px);background:rgba(12,19,33,.96);border:1px solid rgba(56,189,248,.5);padding:11px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:90vw;font-size:13px;font-weight:600}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .site-frame{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
-html.sp,html.sp body{background:#f1f2f6}
-html.sp .site-frame{background:transparent}
 
 .site-msg{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--mu)}
 
@@ -140,29 +138,9 @@ html.sp .site-frame{background:transparent}
 .sl .ab .cp{background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.35);color:#e0f2fe}
 .sl .ab .dl{color:var(--danger);background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-
-
-
-/* instant loading skeleton for shop links (shown before any network request finishes) */
-#boot{position:fixed;inset:0;z-index:40;background:#f1f2f6;overflow:hidden;transition:opacity .25s}
-#boot.off{opacity:0;pointer-events:none}
-html:not(.sp) #boot{display:none}
-#boot i,#boot b,#boot u{display:block;background:linear-gradient(90deg,#e3e6ec 25%,#eef0f4 50%,#e3e6ec 75%);background-size:200% 100%;animation:bkS 1.2s linear infinite;border-radius:10px}
-#boot .bt{display:flex;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 8px;background:#fff}
-#boot .bt i{flex:1;height:34px;border-radius:9px}
-#boot .bq{background:#fff;padding:2px 12px 10px}
-#boot .bq u{height:42px;border-radius:10px;text-decoration:none}
-#boot .bc{display:flex;gap:14px;padding:10px 12px;background:#fff;overflow:hidden}
-#boot .bc i{flex:none;width:46px;height:58px;border-radius:12px}
-#boot .bn{margin:8px 10px;height:170px;border-radius:14px}
-#boot .bg{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 10px}
-#boot .bg b{height:190px;border-radius:12px}
-@keyframes bkS{to{background-position:-200% 0}}
-@media (prefers-reduced-motion:reduce){#boot i,#boot b,#boot u{animation:none}}
 </style>
 </head>
 <body>
-<div id="boot" aria-hidden="true"><div class="bt"><i></i><i></i></div><div class="bq"><u></u></div><div class="bc"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><i class="bn"></i><div class="bg"><b></b><b></b><b></b><b></b></div></div>
 <div id="app"></div>
 <dialog id="dlg"></dialog>
 <div class="toast" id="toast" role="status"></div>
@@ -302,9 +280,6 @@ function pullSite(slug,cb){
     .catch(function(e){legacyLookup().then(function(ok){if(ok)done(true);else useCache(String(e&&e.message||e))}).catch(function(x){useCache(String(x&&x.message||e&&e.message||e))})});
 }
 var touched=null;
-function bootOff(){var b=document.getElementById("boot");if(!b||b.className==="off")return;b.className="off";setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b)},250)}
-try{new MutationObserver(function(){if(document.querySelector("#app .site-msg"))bootOff()}).observe(document.getElementById("app"),{childList:true,subtree:true})}catch(e){}
-setTimeout(bootOff,15000);
 /* Keeps /linkIndex/<slug> in step with a client's links, so the very first open of a new shortlink
    is a single direct lookup instead of scanning. Fire-and-forget: if it fails, the slower scan path still works. */
 function idxPut(slug,cid){try{fetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",{method:"PUT",body:JSON.stringify(ck(cid))})}catch(e){}}
@@ -609,7 +584,7 @@ var currentHash="";
 function loadSnap(slug,h){try{var o=JSON.parse(localStorage.getItem("shopsnap2-"+slug)||"null");if(o&&o.h===h&&Date.now()-o.t<1800000)return o.s}catch(e){}return null}
 function pruneSnaps(keep){try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf("shopsnap2-")===0&&k!==keep)localStorage.removeItem(k)}}catch(e){}}
 function saveSnap(slug,s,h){var key="shopsnap2-"+slug,v=JSON.stringify({t:Date.now(),h:h,s:s});try{localStorage.setItem(key,v)}catch(e){pruneSnaps(key);try{localStorage.setItem(key,v)}catch(x){}}}
-window.addEventListener("message",function(e){var f=$("#siteFrame");if(!f||e.source!==f.contentWindow)return;var d=e.data;if(!d)return;if(d.__bootDone){bootOff();return}if(d.__ag&&!d.kid&&d.snap&&currentView==="site"&&currentSlug)saveSnap(currentSlug,d.snap,currentHash)});
+window.addEventListener("message",function(e){var f=$("#siteFrame");if(!f||e.source!==f.contentWindow)return;var d=e.data;if(!d)return;if(d.__ag&&!d.kid&&d.snap&&currentView==="site"&&currentSlug)saveSnap(currentSlug,d.snap,currentHash)});
 
 /* ---------- public site ---------- */
 function renderSite(slug){
@@ -627,18 +602,14 @@ function renderSite(slug){
   var html=personalize(s,c);
   currentHash=s.id+"/"+hashStr(s.html||"")+"/"+hashStr([c.upi||"",c.pn||"",c.tr||""].join("|")+"|"+(c.pn||"").length);   /* a saved place only belongs to this exact script */
   var data=JSON.stringify({upi:c.upi||"",pn:c.pn||"",tr:c.tr||"",dbg:/[?&]debug/i.test(location.search+location.hash)?1:0}).replace(/</g,"\\u003c");
-  /* releases the loading screen as soon as the page's structure exists, instead of waiting for every image \u2014 so the banner appears first and the rest of the layout fills in after it, same as on the real site */
-  var earlyOut='<script>document.addEventListener("DOMContentLoaded",function(){try{parent.postMessage({__bootDone:1},"*")}catch(e){}});<\/script>';
-  var inject=earlyOut+'<script>window.PANEL='+data+';<\/script>'+agentTag(loadSnap(slug,currentHash));
+  var inject='<script>window.PANEL='+data+';<\/script>'+agentTag(loadSnap(slug,currentHash));
   html=/<head[^>]*>/i.test(html)?html.replace(/<head[^>]*>/i,function(m){return m+inject}):inject+html;
   var _sf=$("#siteFrame");
   if(!_sf){
-    app.innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:transparent;border:none"></iframe>';
+    app.innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:#fff;border:none"></iframe>';
     _sf=$("#siteFrame");
   }
-  _sf.onload=function(){_sf.style.background="#fff";bootOff()};
   _sf.srcdoc=html;
-  setTimeout(bootOff,6000);
 }
 
 /* ---------- client panel ---------- */
