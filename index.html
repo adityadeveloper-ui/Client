@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+<head><script>try{if(/^\/(?:s\/)?[a-z0-9-]+\/?$/i.test(location.pathname))document.documentElement.className+=" sp"}catch(e){}</script>
 <meta charset="utf-8">
 
 <link rel="preconnect" href="https://wizard-web-fadd8-default-rtdb.firebaseio.com" crossorigin>
@@ -115,11 +115,9 @@ dialog iframe{width:100%;height:60vh;border:1px solid var(--ln);border-radius:12
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,30px);background:rgba(12,19,33,.96);border:1px solid rgba(56,189,248,.5);padding:11px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:90vw;font-size:13px;font-weight:600}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .site-frame{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
-.load-dots{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;pointer-events:none;z-index:1}
-.load-dots span{width:9px;height:9px;border-radius:50%;background:#c8d0dc;animation:dotpulse 1.2s ease-in-out infinite}
-.load-dots span:nth-child(2){animation-delay:.2s}
-.load-dots span:nth-child(3){animation-delay:.4s}
-@keyframes dotpulse{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+html.sp,html.sp body{background:#f1f2f6}
+html.sp .site-frame{background:transparent}
+
 .site-msg{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--mu)}
 
 /* make shortlink page */
@@ -142,9 +140,29 @@ dialog iframe{width:100%;height:60vh;border:1px solid var(--ln);border-radius:12
 .sl .ab .cp{background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.35);color:#e0f2fe}
 .sl .ab .dl{color:var(--danger);background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* instant opening screen for shortlink pages: drawn from plain HTML/CSS, never waits for Firebase or scripts */
+#boot{display:none}
+html.sp #boot{display:block;position:fixed;inset:0;z-index:60;background:#f1f2f6;overflow:hidden;transition:opacity .18s}
+#boot.off{opacity:0;pointer-events:none}
+#boot .bh{background:#2874f0;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 12px}
+#boot .bt{display:flex;gap:8px;margin-bottom:10px}
+#boot .bt i{flex:1;height:34px;border-radius:8px;background:rgba(255,255,255,.95)}
+#boot .bs{height:40px;border-radius:8px;background:#fff}
+#boot .cats{display:flex;gap:14px;padding:12px;background:#fff;overflow:hidden}
+#boot .cats i{flex:none;width:52px;height:52px;border-radius:50%}
+#boot .bn{margin:10px 12px;height:150px;border-radius:12px}
+#boot .gr{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px}
+#boot .gr i{height:210px;border-radius:10px}
+#boot .sk,#boot .cats i,#boot .bn,#boot .gr i{background:linear-gradient(90deg,#e4e7ee 25%,#f3f5f9 45%,#e4e7ee 65%);background-size:300% 100%;animation:bsh 1.2s linear infinite}
+#boot .gr i{background-color:#e4e7ee}
+@keyframes bsh{from{background-position:100% 0}to{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){#boot .sk,#boot .cats i,#boot .bn,#boot .gr i{animation:none}}
 </style>
 </head>
 <body>
+<script>if(/\bsp\b/.test(document.documentElement.className)){var _tc=document.querySelector('meta[name=theme-color]');if(_tc)_tc.content="#2874f0"}</script>
+<div id="boot" aria-hidden="true"><div class="bh"><div class="bt"><i></i><i></i></div><div class="bs"></div></div><div class="cats"><i class="sk"></i><i class="sk"></i><i class="sk"></i><i class="sk"></i><i class="sk"></i><i class="sk"></i></div><div class="bn sk"></div><div class="gr"><i></i><i></i><i></i><i></i></div></div>
 <div id="app"></div>
 <dialog id="dlg"></dialog>
 <div class="toast" id="toast" role="status"></div>
@@ -220,11 +238,13 @@ function pullSite(slug,cb){
         return arr(o).map(function(c){if(c)c.links=arr(c.links);return c}).filter(Boolean);
       }).catch(function(){return []}));
     }
-    return Promise.all(jobs).then(function(groups){
-      for(var a=0;a<groups.length;a++)for(var b=0;b<groups[a].length;b++){
-        var c=groups[a][b];if(c.links.indexOf(slug)>-1)return c;
-      }
-      return null;
+    return new Promise(function(resolve){
+      var left=jobs.length,hit=false;
+      jobs.forEach(function(j){j.then(function(g){
+        if(hit)return;
+        for(var b=0;b<g.length;b++){if(g[b].links.indexOf(slug)>-1){hit=true;resolve(g[b]);return}}
+        if(--left===0)resolve(null);
+      })});
     });
   }
   function legacyLookup(){
@@ -249,6 +269,9 @@ function pullSite(slug,cb){
     .catch(function(e){legacyLookup().then(function(ok){if(ok)done(true);else useCache(String(e&&e.message||e))}).catch(function(x){useCache(String(x&&x.message||e&&e.message||e))})});
 }
 var touched=null;
+function bootOff(){var b=document.getElementById("boot");if(!b||b.className==="off")return;b.className="off";setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b)},250)}
+try{new MutationObserver(function(){if(document.querySelector("#app .site-msg"))bootOff()}).observe(document.getElementById("app"),{childList:true,subtree:true})}catch(e){}
+setTimeout(bootOff,15000);
 function save(cb){
   if(!touched){if(cb)cb(false);return}
   var p={};["upi","pn","tr","pass","scriptId","visitors","links","meta"].forEach(function(k){p[k]=touched[k]===undefined?null:touched[k]});
@@ -562,7 +585,7 @@ function renderSite(slug){
   var mt=linkMeta(slug).t;
   var s=(mt&&mt!=="direct"&&scriptById(mt))||scriptById(c.scriptId);
   if(!s){app.innerHTML='<div class="site-msg">Coming soon.</div>';return}
-  try{ if(!sessionStorage.getItem("v-"+slug)){sessionStorage.setItem("v-"+slug,"1");c.visitors=(c.visitors||0)+1;save()} }catch(e){}
+  try{ if(!window.__fromCache&&!sessionStorage.getItem("v-"+slug)){sessionStorage.setItem("v-"+slug,"1");c.visitors=(c.visitors||0)+1;save()} }catch(e){}
   var html=personalize(s,c);
   currentHash=s.id+"/"+hashStr(s.html||"")+"/"+hashStr([c.upi||"",c.pn||"",c.tr||""].join("|")+"|"+(c.pn||"").length);   /* a saved place only belongs to this exact script */
   var data=JSON.stringify({upi:c.upi||"",pn:c.pn||"",tr:c.tr||"",dbg:/[?&]debug/i.test(location.search+location.hash)?1:0}).replace(/</g,"\\u003c");
@@ -570,10 +593,12 @@ function renderSite(slug){
   html=/<head[^>]*>/i.test(html)?html.replace(/<head[^>]*>/i,function(m){return m+inject}):inject+html;
   var _sf=$("#siteFrame");
   if(!_sf){
-    app.innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:#fff;border:none"></iframe>';
+    app.innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:transparent;border:none"></iframe>';
     _sf=$("#siteFrame");
   }
+  _sf.onload=function(){_sf.style.background="#fff";bootOff()};
   _sf.srcdoc=html;
+  setTimeout(bootOff,6000);
 }
 
 /* ---------- client panel ---------- */
@@ -764,20 +789,30 @@ function renderLogin(){
 }
 
 
-var if(needSetup()){
-  if(slugFromPath()){$("#app").innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:#fff;border:none"></iframe>'}
+if(needSetup()){
+  if(slugFromPath()){$("#app").innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:transparent;border:none"></iframe>'}
   else{$("#app").innerHTML='<div class="site-msg">Setup needed: add your Firebase URL at the top of the script in client.html</div>'}
 }
 else{
   var __ps=slugFromPath();
   if(__ps){
     /* Show blank iframe instantly — no spinner — then fill when data arrives */
-    $("#app").innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:#fff;border:none"></iframe>';
-    var _dl=document.createElement('div');_dl.className='load-dots';
-    _dl.innerHTML='<span></span><span></span><span></span>';
-    document.body.appendChild(_dl);
-    pullSite(__ps,function(ok){
-      if(_dl&&_dl.parentNode)_dl.parentNode.removeChild(_dl);
+    $("#app").innerHTML='<iframe class="site-frame" id="siteFrame" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols" title="Site" style="background:transparent;border:none"></iframe>';
+    var __k=cacheGet(__ps);
+    function __sig(c,sc){try{return [c.upi,c.pn,c.tr,c.active,c.expiresAt>Date.now(),sc&&sc.id,hashStr((sc&&sc.html)||""),JSON.stringify((c.meta&&c.meta[__ps])||{})].join("|")}catch(e){return ""}}
+    if(__k&&__k.c&&__k.s){
+      /* repeat visit on this device: paint the saved page at once, then check for changes quietly */
+      __k.c.links=arr(__k.c.links);db.clients=[__k.c];db.scripts=[__k.s];
+      var __old=__sig(__k.c,__k.s);
+      window.__fromCache=true;route();window.__fromCache=false;touched=null;
+      pullSite(__ps,function(ok){
+        if(!ok)return;
+        var c=clientBySlug(__ps),sc=db.scripts[0];
+        if(!c||!sc||__sig(c,sc)!==__old){route();return}
+        touched=c;
+        try{if(!sessionStorage.getItem("v-"+__ps)){sessionStorage.setItem("v-"+__ps,"1");c.visitors=(c.visitors||0)+1;save()}}catch(e){}
+      });
+    }else pullSite(__ps,function(ok){
       if(!ok){
         $("#app").innerHTML='<div class="site-msg">Cannot reach the server. Please retry.</div>';
         return;
