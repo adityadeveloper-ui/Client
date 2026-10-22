@@ -142,9 +142,27 @@ html.sp .site-frame{background:transparent}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 
+
+/* instant loading skeleton for shop links (shown before any network request finishes) */
+#boot{position:fixed;inset:0;z-index:40;background:#f1f2f6;overflow:hidden;transition:opacity .25s}
+#boot.off{opacity:0;pointer-events:none}
+html:not(.sp) #boot{display:none}
+#boot i,#boot b,#boot u{display:block;background:linear-gradient(90deg,#e3e6ec 25%,#eef0f4 50%,#e3e6ec 75%);background-size:200% 100%;animation:bkS 1.2s linear infinite;border-radius:10px}
+#boot .bt{display:flex;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 8px;background:#fff}
+#boot .bt i{flex:1;height:34px;border-radius:9px}
+#boot .bq{background:#fff;padding:2px 12px 10px}
+#boot .bq u{height:42px;border-radius:10px;text-decoration:none}
+#boot .bc{display:flex;gap:14px;padding:10px 12px;background:#fff;overflow:hidden}
+#boot .bc i{flex:none;width:46px;height:58px;border-radius:12px}
+#boot .bn{margin:8px 10px;height:170px;border-radius:14px}
+#boot .bg{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 10px}
+#boot .bg b{height:190px;border-radius:12px}
+@keyframes bkS{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){#boot i,#boot b,#boot u{animation:none}}
 </style>
 </head>
 <body>
+<div id="boot" aria-hidden="true"><div class="bt"><i></i><i></i></div><div class="bq"><u></u></div><div class="bc"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><i class="bn"></i><div class="bg"><b></b><b></b><b></b><b></b></div></div>
 <div id="app"></div>
 <dialog id="dlg"></dialog>
 <div class="toast" id="toast" role="status"></div>
@@ -187,6 +205,16 @@ function setStatus(m){var e=document.getElementById("ls");if(e)e.textContent=m}
 var LOADERR="";
 function cacheGet(slug){try{return JSON.parse(localStorage.getItem("sc-"+slug)||"null")}catch(e){return null}}
 function cachePut(slug,c,sc){try{localStorage.setItem("sc-"+slug,JSON.stringify({c:c,s:sc}))}catch(e){}}
+var apiOff=false,preS={},idxSid=null;
+/* big shop script: edge-cached copy from /api/script first (fast, compressed), Firebase as the fallback */
+function fetchScript(id){
+  if(preS[id])return preS[id];
+  var fb=function(){return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",9000)};
+  var p=(apiOff?fb():tfetch("/api/script?id="+encodeURIComponent(id),4500).then(function(sc){
+    if(!sc||typeof sc!=="object"||!sc.html)throw new Error("bad");return sc
+  }).catch(function(){apiOff=true;return fb()}));
+  preS[id]=p;p.catch(function(){delete preS[id]});return p;
+}
 function pullSite(slug,cb){
   var finished=false;
   function done(ok){if(finished)return;finished=true;if(cb)cb(ok)}
@@ -202,7 +230,7 @@ function pullSite(slug,cb){
     var m=(c.meta&&c.meta[slug])||{};
     var id=(m.t&&m.t!=="direct")?m.t:c.scriptId;
     if(!id){db.scripts=[];return Promise.resolve(true)}
-    return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",6500).then(function(sc){
+    return fetchScript(id).then(function(sc){
       if(!sc||typeof sc!=="object"||!sc.html)throw new Error("script missing");
       if(!sc.id)sc.id=id;
       db.scripts=[sc];cachePut(slug,c,sc);return true;
@@ -211,8 +239,11 @@ function pullSite(slug,cb){
   /* Fastest path: a flat slug -> client-key index written whenever a shortlink is made (idxPut below).
      One direct GET instead of scanning, so first-time opens on slow mobile connections settle in one round trip. */
   function indexLookup(){
-    return tfetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",2500).then(function(cid){
+    return tfetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",2500).then(function(v){
+      var cid=v,sid=null;if(v&&typeof v==="object"){cid=v.c;sid=v.s}   /* index now also remembers the script id */
       if(!cid||typeof cid!=="string")return null;
+      idxSid=(typeof sid==="string"&&sid)?sid:null;
+      if(idxSid)fetchScript(idxSid).catch(function(){});   /* start the big download now, in parallel with the client record */
       return tfetch(BASE+"/clients/"+cid+".json",3500).then(function(c){
         if(!c||typeof c!=="object")return null;
         c.links=arr(c.links);
@@ -265,7 +296,9 @@ function pullSite(slug,cb){
       idxPut(slug,c2.id);   /* backfill: link existed before the index did, so later visits get the fast path too */
       return getClientScript(c2).catch(function(){return legacyLookup()});
     });
-  }).then(function(ok){if(ok)done(true);else useCache(LOADERR||"page loading failed")})
+  }).then(function(ok){
+    if(ok){var c0=db.clients[0],s0=db.scripts[0];if(c0&&s0&&s0.id&&idxSid!==s0.id)idxPutS(slug,c0.id,s0.id);done(true)}
+    else useCache(LOADERR||"page loading failed")})
     .catch(function(e){legacyLookup().then(function(ok){if(ok)done(true);else useCache(String(e&&e.message||e))}).catch(function(x){useCache(String(x&&x.message||e&&e.message||e))})});
 }
 var touched=null;
@@ -275,6 +308,7 @@ setTimeout(bootOff,15000);
 /* Keeps /linkIndex/<slug> in step with a client's links, so the very first open of a new shortlink
    is a single direct lookup instead of scanning. Fire-and-forget: if it fails, the slower scan path still works. */
 function idxPut(slug,cid){try{fetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",{method:"PUT",body:JSON.stringify(ck(cid))})}catch(e){}}
+function idxPutS(slug,cid,sid){try{fetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",{method:"PUT",body:JSON.stringify({c:ck(cid),s:String(sid)})})}catch(e){}}
 function idxDel(slug){try{fetch(BASE+"/linkIndex/"+encodeURIComponent(slug)+".json",{method:"DELETE"})}catch(e){}}
 function save(cb){
   if(!touched){if(cb)cb(false);return}
