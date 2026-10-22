@@ -205,7 +205,10 @@ var apiOff=false,preS={},idxSid=null;
 function fetchScript(id){
   if(preS[id])return preS[id];
   var fb=function(){return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+".json",9000)};
-  var p=(apiOff?fb():tfetch("/api/script?id="+encodeURIComponent(id),4500).then(function(sc){
+  var p=(apiOff?fb():tfetch(BASE+"/scripts/"+encodeURIComponent(id)+"/at.json",3000).then(function(v){
+    if(v===null||v===undefined)throw new Error("nov");
+    return tfetch("/api/script?id="+encodeURIComponent(id)+"&v="+encodeURIComponent(v),12000)
+  }).then(function(sc){
     if(!sc||typeof sc!=="object"||!sc.html)throw new Error("bad");return sc
   }).catch(function(){apiOff=true;return fb()}));
   preS[id]=p;p.catch(function(){delete preS[id]});return p;
