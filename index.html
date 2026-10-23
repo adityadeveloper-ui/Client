@@ -168,22 +168,11 @@ function arr(o){return !o?[]:Array.isArray(o)?o.filter(Boolean):Object.keys(o).m
 function needSetup(){return /PASTE_FIREBASE_URL_HERE/.test(REMOTE)}
 var db={owner:null,domain:"",shortDomains:[],scripts:[],clients:[]};
 function load(){return db}
-function pull(cb,withScripts){
-  /* LEAN: scripts hold full page HTML, so they are NOT downloaded here (login + 30s refresh used to pull all of them). */
-  var names=["clients","domain","shortDomains"];if(withScripts)names.push("scripts");
-  Promise.all(names.map(function(n){return tfetch(BASE+"/"+n+".json",10000).catch(function(e){if(n==="shortDomains")return null;LOADERR=n+": "+String(e&&e.message||e);throw e})})).then(function(a){
-    db={owner:null,domain:a[1]||"",shortDomains:arr(a[2]).filter(function(x){return typeof x==="string"}),scripts:withScripts?arr(a[3]):(db.scripts||[]),clients:arr(a[0]).map(function(c){c.links=arr(c.links);return c})};
+function pull(cb){
+  Promise.all(["clients","scripts","domain","shortDomains"].map(function(n){return tfetch(BASE+"/"+n+".json",10000).catch(function(e){if(n==="shortDomains")return null;LOADERR=n+": "+String(e&&e.message||e);throw e})})).then(function(a){
+    db={owner:null,domain:a[2]||"",shortDomains:arr(a[3]).filter(function(x){return typeof x==="string"}),scripts:arr(a[1]),clients:arr(a[0]).map(function(c){c.links=arr(c.links);return c})};
     if(cb)cb(true);
   }).catch(function(){if(cb)cb(false)});
-}
-/* script list for the dropdowns: only ids + names (tiny requests), cached 10 min */
-var scriptsAt=0;
-function loadScriptList(cb){
-  if(db.scripts&&db.scripts.length&&Date.now()-scriptsAt<600000){if(cb)cb();return}
-  tfetch(BASE+"/scripts.json?shallow=true",8000).then(function(o){
-    var ids=Object.keys(o||{});
-    return Promise.all(ids.map(function(id){return tfetch(BASE+"/scripts/"+encodeURIComponent(id)+"/name.json",6000).then(function(n){return {id:id,name:n||"Unnamed script"}},function(){return {id:id,name:"Unnamed script"}})}));
-  }).then(function(list){db.scripts=list;scriptsAt=Date.now();if(cb)cb()},function(){if(cb)cb()});
 }
 var T0=(window.performance&&performance.timeOrigin)||Date.now(),TDBG=/[?&]t=1(&|$)/.test(location.search),TLOG=[];
 function tlog(l){if(!TDBG)return;TLOG.push("+"+Math.round(Date.now()-T0)+"ms  "+l);var e=document.getElementById("tdbg");if(!e){e=document.createElement("pre");e.id="tdbg";e.style.cssText="position:fixed;left:0;right:0;bottom:0;max-height:55%;overflow:auto;margin:0;padding:6px 8px;background:rgba(0,0,0,.85);color:#7CFC9A;font:11px/1.35 monospace;z-index:2147483647;white-space:pre-wrap;pointer-events:none";document.documentElement.appendChild(e)}e.textContent=TLOG.join("\n")}
@@ -294,7 +283,7 @@ function pullSite(slug,cb){
         return new Promise(function(resolve){pull(function(ok){
           if(ok){var cc=clientBySlug(slug),mm=(cc&&cc.meta&&cc.meta[slug])||{},sid=(mm.t&&mm.t!=="direct")?mm.t:(cc&&cc.scriptId),ss=cc&&scriptById(sid);if(cc&&ss)cachePut(slug,cc,ss)}
           resolve(ok);
-        },true)});
+        })});
       });
     });
   }
@@ -333,7 +322,7 @@ var currentView=null,currentSlug=null;
 function liveSig(c){return c?[c.upi||"",c.pn||"",c.tr||""].join("|"):""}
 var liveCheckBusy=false;
 function checkLive(){
-  if(liveCheckBusy||document.hidden||needSetup()||currentView==="login")return;
+  if(liveCheckBusy||document.hidden||needSetup())return;
   liveCheckBusy=true;
   var sl=currentView==="site"?currentSlug:null,c0=sl?clientBySlug(sl):null,before=liveSig(c0);
   pull(function(ok){
@@ -564,7 +553,6 @@ function renderSite(slug){
   var mt=linkMeta(slug).t;
   var s=(mt&&mt!=="direct"&&scriptById(mt))||scriptById(c.scriptId);
   if(!s){app.innerHTML='<div class="site-msg">Coming soon.</div>';return}
-  if(!s.html){var _sid=s.id;fetchScript(_sid).then(function(sc){for(var i=0;i<db.scripts.length;i++)if(db.scripts[i].id===_sid)db.scripts[i]=sc;currentView=null;renderSite(slug)},function(){app.innerHTML='<div class="site-msg">Cannot reach the server. Please retry.</div>'});return}
   try{ if(!window.__fromCache&&!sessionStorage.getItem("v-"+slug)){sessionStorage.setItem("v-"+slug,"1");c.visitors=(c.visitors||0)+1;save()} }catch(e){}
   var html=personalize(s,c);
   currentHash=s.id+"/"+hashStr(s.html||"")+"/"+hashStr([c.upi||"",c.pn||"",c.tr||""].join("|")+"|"+(c.pn||"").length);   /* a saved place only belongs to this exact script */
@@ -761,7 +749,7 @@ function renderLogin(){
     var st=status(c);
     if(st==="expired"){e.textContent="This account has expired. Contact the owner.";return}
     if(st==="disabled"){e.textContent="This account is disabled. Contact the owner.";return}
-    e.textContent="Loading...";loadScriptList(function(){clientId=c.id;renderPanel()});
+    clientId=c.id;renderPanel();
     });
   }
   $("#lbtn").onclick=doLogin;
