@@ -444,6 +444,9 @@ function rep(h,src,val){
   return h;
 }
 /* builds the per-client web page; the saved original HTML is never changed */
+/* an older "speed up images" step pasted loading/decoding text inside JS strings, which stops the whole shop script; remove exactly that text inside script blocks */
+function repairShop(h){var BAD='<img loading="lazy" decoding="async"';if(h.indexOf(BAD)<0)return h;
+  return h.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi,function(all,a,code){if(/\bsrc\s*=/i.test(a)||code.indexOf(BAD)<0)return all;return "<script"+a+">"+code.split(BAD).join("<img")+"<\/script>"})}
 function personalize(s,c){
   var upi=String(c.upi||"").trim(),tr=String(c.tr||"").trim(),pn=String(c.pn||"").trim();
   var h=s.html.split("{{UPI}}").join(upi).split("{{TR}}").join(tr).split("{{PN}}").join(pn);
@@ -501,6 +504,7 @@ function go(h){if(location.hash===h)route();else location.hash=h}
 var AGENT_SRC=(function AGENT(cfg){
 if(window.__AG)return;window.__AG=1;
 var W=window,D=document,lvl=cfg.lvl||0;
+if(lvl===0){try{W.addEventListener('error',function(e){try{parent.postMessage({__serr:String(e.message||'error')+(e.lineno?' (line '+e.lineno+')':'')},'*')}catch(x){}})}catch(x){}}
 /*FIXUPI-START*/
 function pnClean(s){return String(s||'').replace(/\s+/g,' ').trim()}
 function isPay(u){return typeof u==='string'&&/^[a-z][a-z0-9+.\-]*:/i.test(u)&&!/^(https?|tel|mailto|sms|javascript|data|blob|about|file|whatsapp):/i.test(u)&&/[?&]pa=/i.test(u)}
@@ -554,7 +558,7 @@ function renderSite(slug){
   var s=(mt&&mt!=="direct"&&scriptById(mt))||scriptById(c.scriptId);
   if(!s){app.innerHTML='<div class="site-msg">Coming soon.</div>';return}
   try{ if(!window.__fromCache&&!sessionStorage.getItem("v-"+slug)){sessionStorage.setItem("v-"+slug,"1");c.visitors=(c.visitors||0)+1;save()} }catch(e){}
-  var html=personalize(s,c);
+  var html=repairShop(personalize(s,c));   /* heals scripts an older image optimizer broke, so they open without re-saving */
   currentHash=s.id+"/"+hashStr(s.html||"")+"/"+hashStr([c.upi||"",c.pn||"",c.tr||""].join("|")+"|"+(c.pn||"").length);   /* a saved place only belongs to this exact script */
   var data=JSON.stringify({upi:c.upi||"",pn:c.pn||"",tr:c.tr||"",dbg:/[?&]debug/i.test(location.search+location.hash)?1:0}).replace(/</g,"\\u003c");
   var inject='<script>window.PANEL='+data+';<\/script>'+agentTag(null);
@@ -565,10 +569,12 @@ function renderSite(slug){
     _sf=$("#siteFrame");
   }
   tlog("showing shop (page html "+Math.round(html.length/1024)+"KB)");
+  tlog("build: repair-v2");
   if(TDBG&&!_sf.__tl){_sf.__tl=1;_sf.addEventListener("load",function(){tlog("shop frame finished loading")})}
   _sf.srcdoc=html;
 }
 
+window.addEventListener("message",function(e){var m=e.data;if(m&&typeof m==="object"&&m.__serr)tlog("SHOP ERROR: "+m.__serr)});
 /* ---------- client panel ---------- */
 function renderPanel(){
   currentView="panel";currentSlug=null;
