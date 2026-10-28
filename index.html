@@ -427,11 +427,14 @@ function hookNav(h){
 }
 /* ---- end helpers ---- */
 
+/* a script that ships with an empty UPI setting (upi:"", var UPI_ID='' ...) gets the client's saved UPI put in */
+var EMPTY_UPI_RE=/((?:\\*["'])?\b(?:upi\w*|vpa\w*|payee_?vpa|merchant_?upi|payee_?upi|pay_?upi)(?:\\*["'])?\s*[:=]\s*)(\\*)(["'])(\\*)\3/gi;
 function detectSrc(html){
   function dec(x){try{return decodeURIComponent(x)}catch(e){return x}}
   var u=html.match(/[?&;]pa=([^&"'\s<>\\]+)/i),t=html.match(/[?&;]tr=([^&"'\s<>\\]+)/i),p=html.match(/[?&;]pn=([^&"'\s<>\\]+)/i);
   var upi=u?dec(u[1]):"",tr=t?dec(t[1]):"",pn=p?dec(p[1]):"";
   if(upi.indexOf("@")<1){var j=html.match(/"upi"\s*:\s*"([^"\\]+)"/);if(j)upi=dec(j[1])}
+  if(upi.indexOf("@")<1){var k=html.match(/\b(?:upi\w*|vpa\w*|payee_?vpa|merchant_?upi|payee_?upi|pay_?upi)\\*["']?\s*[:=]\s*\\*["']([\w.\-]+@[a-z][\w.\-]*)/i);if(k)upi=dec(k[1])}
   if(upi.indexOf("@")<1||upi.length<5)upi="";
   if(tr.length<3)tr="";
   if(pn.length<2)pn="";
@@ -450,6 +453,7 @@ function repairShop(h){var BAD='<img loading="lazy" decoding="async"';if(h.index
 function personalize(s,c){
   var upi=String(c.upi||"").trim(),tr=String(c.tr||"").trim(),pn=String(c.pn||"").trim();
   var h=s.html.split("{{UPI}}").join(upi).split("{{TR}}").join(tr).split("{{PN}}").join(pn);
+  if(upi)h=h.replace(EMPTY_UPI_RE,function(m,a,b,qt,d){return a+b+qt+upi+d+qt});
   var d=(s.srcUpi===undefined||s.srcTr===undefined||s.srcPn===undefined)?detectSrc(s.html):null;
   h=rep(h,s.srcUpi!==undefined?s.srcUpi:d.upi,upi);
   h=rep(h,s.srcTr!==undefined?s.srcTr:d.tr,tr);
@@ -561,7 +565,7 @@ function renderSite(slug){
   var html=repairShop(personalize(s,c));   /* heals scripts an older image optimizer broke, so they open without re-saving */
   currentHash=s.id+"/"+hashStr(s.html||"")+"/"+hashStr([c.upi||"",c.pn||"",c.tr||""].join("|")+"|"+(c.pn||"").length);   /* a saved place only belongs to this exact script */
   var data=JSON.stringify({upi:c.upi||"",pn:c.pn||"",tr:c.tr||"",dbg:/[?&]debug/i.test(location.search+location.hash)?1:0}).replace(/</g,"\\u003c");
-  var inject='<script>window.PANEL='+data+';<\/script>'+agentTag(null);
+  var inject='<script>window.PANEL='+data+';window.PAY_CONFIG={upi:window.PANEL.upi||"",name:window.PANEL.pn||"Shop"};<\/script>'+agentTag(null);
   html=/<head[^>]*>/i.test(html)?html.replace(/<head[^>]*>/i,function(m){return m+inject}):inject+html;
   var _sf=$("#siteFrame");
   if(!_sf){
