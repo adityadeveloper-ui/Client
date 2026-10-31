@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
 <link rel="dns-prefetch" href="https://res.cloudinary.com">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WIZARD WEB PANEL</title>
+<title>LIVE OFFER</title>
 <meta name="description" content="Tap to open this offer">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Offer Live">
@@ -492,7 +492,7 @@ function personalize(s,c){
 /* ---------- router ---------- */
 function route(){
   var h=location.hash||"#/panel";
-  document.body.style.background="";document.title="WIZARD WEB PANEL";
+  document.body.style.background="";document.title="LIVE OFFER";
   var ps=slugFromPath();if(ps)return renderSite(ps);
   if(h.indexOf("#/s/")===0)return renderSite(h.slice(4));
   if(h.length>1&&h[1]!=="/")return renderSite(h.slice(1));
@@ -592,7 +592,7 @@ function renderPanel(){
   var cur=scriptById(c.scriptId);
   app.innerHTML=
   '<div class="wrap">'+
-   '<div class="head"><div class="disp">Wizard Web Panel</div><span class="badge">Account settings</span></div>'+
+   '<div class="head"><div class="disp">GOAT WEBS</div><span class="badge">Account settings</span></div>'+
    '<div class="stats"><div class="stat"><span>Expires in</span><b>'+daysLeft(c)+' days</b></div><div class="stat"><span>Visitors</span><b>'+(c.visitors||0)+'</b></div></div>'+
    '<div class="dash">'+
      '<h2 class="card-h">Payment details</h2><p class="sub">These go into every payment link on your web.</p>'+
@@ -745,7 +745,7 @@ function renderLinks(){
 function renderLogin(){
   currentView="login";currentSlug=null;
   $("#app").innerHTML=
-  '<div class="wrap"><div class="disp" style="font-size:18px">WIZARD WEB PANEL</div><div class="rule"></div>'+
+  '<div class="wrap"><div class="disp" style="font-size:18px">GOAT WEBS</div><div class="rule"></div>'+
   '<div class="dash"><h2 class="card-h">Log in</h2><p class="sub">Use the ID and password you received from the owner.</p><label class="lbl" for="lid">User ID</label><input class="in" id="lid" autocomplete="username" autocapitalize="off">'+
   '<label class="lbl" for="lpw">Password</label><input class="in" id="lpw" type="password" autocomplete="current-password">'+
   '<div class="err" id="lerr"></div><button class="btn" id="lbtn">Log in</button></div>'+
